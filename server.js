@@ -1,0 +1,16 @@
+import express from 'express'; import cors from 'cors'; import dotenv from 'dotenv'; import pg from 'pg'; import path from 'path'; import {fileURLToPath} from 'url';
+dotenv.config(); const {Pool}=pg; const app=express(); const dir=path.dirname(fileURLToPath(import.meta.url));
+const db=new Pool({connectionString:process.env.DATABASE_URL,ssl:process.env.DATABASE_URL?.includes('render.com')?{rejectUnauthorized:false}:false});
+app.use(cors()); app.use(express.json()); app.use(express.static(dir));
+app.get('/api/health',async(req,res)=>{try{await db.query('SELECT 1');res.json({ok:true})}catch{res.status(503).json({ok:false})}});
+app.get('/api/restaurants',async(req,res)=>{try{res.json((await db.query('SELECT * FROM restaurants ORDER BY is_open DESC,name')).rows)}catch{res.status(500).json({error:'Erro ao carregar restaurantes'})}});
+app.get('/api/restaurants/:id/products',async(req,res)=>{try{res.json((await db.query('SELECT * FROM products WHERE restaurant_id=$1 AND available=true ORDER BY name',[req.params.id])).rows)}catch{res.status(500).json({error:'Erro no cardápio'})}});
+app.post('/api/orders',async(req,res)=>{const {restaurantId,customerName,customerPhone,address,notes='',paymentMethod='cash',items=[]}=req.body||{};
+if(!restaurantId||!customerName||!customerPhone||!address||!items.length)return res.status(400).json({error:'Preencha os dados e escolha produtos'});
+const c=await db.connect();try{await c.query('BEGIN');const rr=await c.query('SELECT * FROM restaurants WHERE id=$1 AND is_open=true',[restaurantId]);if(!rr.rowCount)throw Error('Restaurante fechado ou não encontrado');
+let subtotal=0,verified=[];for(const it of items){const q=Math.max(1,Math.min(50,Number(it.quantity)||1));const pr=await c.query('SELECT id,name,price FROM products WHERE id=$1 AND restaurant_id=$2 AND available=true',[it.productId,restaurantId]);if(!pr.rowCount)throw Error('Produto indisponível');const p=pr.rows[0],line=Number(p.price)*q;subtotal+=line;verified.push({...p,q,line})}
+const fee=Number(rr.rows[0].delivery_fee),total=subtotal+fee;const o=await c.query(`INSERT INTO orders(restaurant_id,customer_name,customer_phone,delivery_address,notes,payment_method,subtotal,delivery_fee,total) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id,status,total,created_at`,[restaurantId,customerName,customerPhone,address,notes,paymentMethod,subtotal,fee,total]);
+for(const p of verified)await c.query('INSERT INTO order_items(order_id,product_id,product_name,quantity,unit_price,total) VALUES($1,$2,$3,$4,$5,$6)',[o.rows[0].id,p.id,p.name,p.q,p.price,p.line]);await c.query('COMMIT');res.status(201).json(o.rows[0])
+}catch(e){await c.query('ROLLBACK');res.status(400).json({error:e.message})}finally{c.release()}});
+app.get('/api/orders/:id',async(req,res)=>{try{const o=await db.query('SELECT id,status,total,created_at FROM orders WHERE id=$1',[req.params.id]);if(!o.rowCount)return res.status(404).json({error:'Pedido não encontrado'});const i=await db.query('SELECT product_name,quantity,unit_price,total FROM order_items WHERE order_id=$1',[req.params.id]);res.json({...o.rows[0],items:i.rows})}catch{res.status(500).json({error:'Erro ao consultar pedido'})}});
+app.get('*',(req,res)=>res.sendFile(path.join(dir,'index.html')));app.listen(process.env.PORT||4000,()=>console.log('Delivery do Bairro online'));

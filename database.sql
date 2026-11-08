@@ -1,0 +1,15 @@
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE TABLE IF NOT EXISTS restaurants(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),name VARCHAR(120) NOT NULL,slug VARCHAR(140) UNIQUE NOT NULL,description TEXT DEFAULT '',category VARCHAR(80) NOT NULL,image_url TEXT DEFAULT '',delivery_fee NUMERIC(10,2) NOT NULL DEFAULT 0,delivery_minutes INTEGER NOT NULL DEFAULT 40,is_open BOOLEAN NOT NULL DEFAULT TRUE,city VARCHAR(80) DEFAULT 'Itu',state CHAR(2) DEFAULT 'SP',created_at TIMESTAMPTZ DEFAULT NOW());
+CREATE TABLE IF NOT EXISTS products(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),restaurant_id UUID NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,name VARCHAR(140) NOT NULL,description TEXT DEFAULT '',price NUMERIC(10,2) NOT NULL CHECK(price>=0),image_url TEXT DEFAULT '',available BOOLEAN DEFAULT TRUE,created_at TIMESTAMPTZ DEFAULT NOW());
+CREATE TABLE IF NOT EXISTS orders(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),restaurant_id UUID NOT NULL REFERENCES restaurants(id),customer_name VARCHAR(120) NOT NULL,customer_phone VARCHAR(30) NOT NULL,delivery_address TEXT NOT NULL,notes TEXT DEFAULT '',payment_method VARCHAR(30) DEFAULT 'cash',status VARCHAR(30) DEFAULT 'received',subtotal NUMERIC(10,2) NOT NULL,delivery_fee NUMERIC(10,2) NOT NULL,total NUMERIC(10,2) NOT NULL,created_at TIMESTAMPTZ DEFAULT NOW());
+CREATE TABLE IF NOT EXISTS order_items(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,product_id UUID REFERENCES products(id),product_name VARCHAR(140) NOT NULL,quantity INTEGER NOT NULL CHECK(quantity>0),unit_price NUMERIC(10,2) NOT NULL,total NUMERIC(10,2) NOT NULL);
+INSERT INTO restaurants(name,slug,description,category,image_url,delivery_fee,delivery_minutes) VALUES
+('Burger da Praça','burger-da-praca','Hambúrgueres e porções.','Hambúrgueres','https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=900',5,35),
+('Pizzaria Central','pizzaria-central','Pizzas para compartilhar.','Pizzarias','https://images.unsplash.com/photo-1513104890138-7c749659a591?w=900',6,45),
+('Sabor Caseiro','sabor-caseiro','Comida brasileira.','Brasileira','https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=900',4,30) ON CONFLICT(slug) DO NOTHING;
+INSERT INTO products(restaurant_id,name,description,price,image_url) SELECT r.id,p.name,p.description,p.price,p.img FROM restaurants r JOIN (VALUES
+('burger-da-praca','X-Burger','Pão, hambúrguer, queijo e molho.',24.90,'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=700'),
+('burger-da-praca','Batata frita','Porção individual.',14.00,'https://images.unsplash.com/photo-1573080496219-bb080dd4f877?w=700'),
+('pizzaria-central','Pizza mussarela','Molho, mussarela, tomate e orégano.',49.90,'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=700'),
+('sabor-caseiro','Prato feito','Arroz, feijão, proteína e salada.',25.00,'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=700')
+) p(slug,name,description,price,img) ON r.slug=p.slug WHERE NOT EXISTS(SELECT 1 FROM products x WHERE x.restaurant_id=r.id AND x.name=p.name);

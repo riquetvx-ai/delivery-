@@ -1,0 +1,8 @@
+{
+  "name": "Delivery do Bairro",
+  "short_name": "Delivery Bairro",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fffaf5",
+  "theme_color": "#f07824"
+}
